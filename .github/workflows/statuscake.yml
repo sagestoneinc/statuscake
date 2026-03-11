@@ -32,6 +32,8 @@ on:
 env:
   BASE_URL: https://api.statuscake.com/v1
 
+permissions: {}
+
 jobs:
   run:
     name: ${{ inputs.mode == 'test' && 'Connection Test' || 'Bulk Insert' }}
@@ -114,6 +116,7 @@ jobs:
           import sys
           import io
 
+          # Values from StatusCake v1 API: https://developers.statuscake.com/api/
           VALID_TEST_TYPES = {"HTTP", "HEAD", "TCP", "DNS", "SMTP", "SSH", "PING", "PUSH"}
           VALID_CHECK_RATES = {0, 30, 60, 300, 900, 1800, 3600}
 
