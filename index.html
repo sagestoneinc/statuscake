@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StatusCake Bulk Uptime Insert</title>
+  <meta name="description" content="Bulk insert uptime monitoring tests into StatusCake via the v1 API. Generates executable bash scripts with curl commands.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-root: #0a0a0a;
+      --bg-card: #111111;
+      --bg-input: #0a0a0a;
+      --bg-elevated: #141414;
+      --bg-code: #0d0d0d;
+      --border: #262626;
+      --border-subtle: #1a1a1a;
+      --text-primary: #fafafa;
+      --text-secondary: #d4d4d4;
+      --text-tertiary: #a3a3a3;
+      --text-muted: #737373;
+      --text-dim: #525252;
+      --text-ghost: #404040;
+      --green: #22c55e;
+      --green-light: #4ade80;
+      --green-dark: #14532d;
+      --green-border: #166534;
+      --red: #ef4444;
+      --red-light: #fca5a5;
+      --red-dark: #7f1d1d;
+      --red-bg: #1c0a0a;
+      --blue: #3b82f6;
+      --blue-light: #93c5fd;
+      --blue-dark: #1e3a5f;
+      --blue-border: #1e40af;
+      --amber: #f59e0b;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
+      --font-display: 'Space Grotesk', system-ui, sans-serif;
+    }
+
+    body {
+      font-family: var(--font-mono);
+      background: var(--bg-root);
+      color: #e5e5e5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button { font-family: inherit; cursor: pointer; transition: filter 0.15s; }
+    button:hover:not(:disabled) { filter: brightness(1.2); }
+    button:disabled { cursor: not-allowed; opacity: 0.6; }
+    input, textarea, select { font-family: inherit; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-elevated); }
+    ::-webkit-scrollbar-thumb { background: var(--text-ghost); border-radius: 3px; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* ─── Header ─── */
+    .header {
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .header-dots {
+      display: flex; gap: 6px;
+    }
+    .header-dots span {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+    .header h1 {
+      font-size: 18px; font-weight: 600;
+      font-family: var(--font-display);
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+    }
+    .header h1 .dim { color: var(--text-muted); }
+    .header-badge {
+      margin-left: auto; font-size: 11px;
+      color: var(--text-dim); display: flex;
+      align-items: center; gap: 6px;
+    }
+
+    /* ─── Layout ─── */
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    /* ─── Step Cards ─── */
+    .step-card {
+      margin-bottom: 28px; padding: 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: opacity 0.3s;
+    }
+    .step-card.disabled {
+      opacity: 0.4; pointer-events: none;
+    }
+    .step-header {
+      display: flex; align-items: center;
+      gap: 10px; margin-bottom: 16px;
+    }
+    .step-number {
+      display: inline-flex; align-items: center;
+      justify-content: center; width: 24px; height: 24px;
+      border-radius: 50%; font-size: 12px; font-weight: 700;
+      background: var(--border); color: var(--text-muted);
+      transition: all 0.3s;
+    }
+    .step-number.active {
+      background: var(--green-dark); color: var(--green-light);
+    }
+    .step-title {
+      font-size: 13px; font-weight: 600;
+      font-family: var(--font-display);
+      color: var(--text-secondary);
+    }
+    .step-badge {
+      font-size: 11px; color: var(--green-light);
+      margin-left: 8px; animation: fadeIn 0.3s ease;
+    }
+
+    /* ─── Form Elements ─── */
+    .label {
+      display: block; font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-dim); margin-bottom: 6px;
+    }
+    .input-row {
+      display: flex; gap: 8px; margin-bottom: 12px;
+    }
+    .input {
+      flex: 1; background: var(--bg-input);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px 14px; color: #e5e5e5; font-size: 13px;
+      outline: none; transition: border-color 0.2s;
+    }
+    .input:focus { border-color: var(--text-ghost); }
+    .input.error { border-color: var(--red-dark); }
+
+    .textarea {
+      width: 100%; background: var(--bg-input);
+      border: 1px solid var(--border-subtle); border-radius: 6px;
+      padding: 14px; color: var(--text-secondary); font-size: 12px;
+      line-height: 1.7; resize: vertical; outline: none;
+      min-height: 160px;
+    }
+    .textarea:focus { border-color: var(--text-ghost); }
+
+    .btn {
+      border: none; border-radius: 6px; padding: 10px 20px;
+      font-size: 12px; font-weight: 600; white-space: nowrap;
+    }
+    .btn-ghost {
+      background: #171717; border: 1px solid #333;
+      color: var(--text-tertiary);
+    }
+    .btn-blue {
+      background: var(--blue-dark);
+      border: 1px solid var(--blue-border);
+      color: var(--blue-light);
+    }
+    .btn-green {
+      background: #16a34a; border: 1px solid #16a34a;
+      color: #fff;
+    }
+    .btn-small {
+      padding: 6px 14px; font-size: 11px;
+    }
+    .btn-small.outline {
+      background: none; border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+
+    /* ─── Toggle ─── */
+    .toggle-group {
+      display: flex; background: var(--bg-input);
+      border-radius: 6px; border: 1px solid var(--border-subtle);
+      overflow: hidden;
+    }
+    .toggle-btn {
+      padding: 7px 18px; border: none; font-size: 12px;
+      font-weight: 500; text-transform: uppercase;
+      letter-spacing: 0.05em; background: transparent;
+      color: var(--text-dim);
+    }
+    .toggle-btn.active {
+      background: var(--border); color: var(--text-primary);
+    }
+
+    /* ─── Error Box ─── */
+    .error-box {
+      background: var(--red-bg);
+      border: 1px solid var(--red-dark);
+      border-radius: 6px; padding: 14px; margin-bottom: 16px;
+    }
+    .error-box div {
+      font-size: 12px; color: var(--red-light); line-height: 1.7;
+    }
+
+    /* ─── Table ─── */
+    .table-wrap {
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px; overflow: hidden; margin-bottom: 28px;
+    }
+    .table-head {
+      display: grid;
+      grid-template-columns: 36px 2fr 3fr 65px 70px;
+      background: var(--bg-elevated); padding: 10px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .table-head div {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-ghost);
+    }
+    .table-body { max-height: 250px; overflow-y: auto; }
+    .table-row {
+      display: grid;
+      grid-template-columns: 36px 2fr 3fr 65px 70px;
+      padding: 8px 16px; border-bottom: 1px solid #111;
+      animation: slideIn 0.2s ease forwards; opacity: 0;
+    }
+    .table-row .col-idx { font-size: 12px; color: var(--text-ghost); }
+    .table-row .col-name {
+      font-size: 12px; color: var(--text-secondary);
+      overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; padding-right: 8px;
+    }
+    .table-row .col-url {
+      font-size: 11px; color: var(--text-dim);
+      overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; padding-right: 8px;
+    }
+    .table-row .col-meta { font-size: 11px; color: var(--text-muted); }
+
+    /* ─── Script Output ─── */
+    .script-output { margin-bottom: 28px; animation: fadeIn 0.4s ease; }
+    .script-header {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+    }
+    .script-title {
+      font-size: 13px; font-weight: 600;
+      font-family: var(--font-display); color: var(--text-secondary);
+    }
+    .script-actions {
+      margin-left: auto; display: flex; gap: 8px;
+    }
+    .script-frame {
+      background: var(--bg-input);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px; overflow: hidden;
+    }
+    .script-tab {
+      padding: 8px 16px; background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .script-tab span { font-size: 11px; color: var(--text-ghost); }
+    .script-tab .lang {
+      font-size: 10px; color: #333; margin-left: auto;
+    }
+    .script-frame pre {
+      margin: 0; padding: 16px; font-size: 11px;
+      line-height: 1.8; color: var(--text-tertiary);
+      overflow: auto; max-height: 500px; white-space: pre;
+    }
+    .how-to-run {
+      margin-top: 12px; padding: 12px 16px;
+      background: #111a0a; border: 1px solid var(--green-dark);
+      border-radius: 6px;
+    }
+    .how-to-run .title {
+      font-size: 12px; color: var(--green-light);
+      font-weight: 600; margin-bottom: 6px;
+    }
+    .how-to-run .cmds {
+      font-size: 11px; color: var(--text-tertiary); line-height: 2;
+    }
+    .how-to-run code {
+      background: var(--bg-input); padding: 2px 6px;
+      border-radius: 3px; color: var(--text-secondary);
+    }
+
+    /* ─── Helpers ─── */
+    .fields-hint {
+      margin-top: 8px; margin-bottom: 16px;
+      font-size: 11px; color: var(--text-ghost); line-height: 1.8;
+    }
+    .fields-hint .req { color: var(--green); }
+    .flex-row { display: flex; gap: 10px; align-items: center; }
+    .ml-auto { margin-left: auto; }
+    .delay-input {
+      width: 70px; background: var(--bg-input);
+      border: 1px solid var(--border-subtle); border-radius: 4px;
+      padding: 6px 8px; color: var(--text-tertiary);
+      font-size: 12px; text-align: center; outline: none;
+    }
+    .delay-label { font-size: 11px; color: var(--text-ghost); }
+    .copied-toast {
+      position: fixed; bottom: 32px; right: 32px;
+      background: var(--green-dark); border: 1px solid var(--green-border);
+      color: var(--green-light); padding: 10px 20px;
+      border-radius: 6px; font-size: 12px; font-weight: 600;
+      animation: fadeIn 0.2s ease; z-index: 100;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-dots">
+      <span style="background:var(--green)"></span>
+      <span style="background:var(--amber)"></span>
+      <span style="background:var(--red)"></span>
+    </div>
+    <h1>StatusCake <span class="dim">/ Bulk Uptime Insert</span></h1>
+    <div class="header-badge">
+      <span style="color:var(--amber)">⚡</span> Script Generator — v1 API
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- Step 1: API Key -->
+    <div class="step-card" id="step1">
+      <div class="step-header">
+        <span class="step-number" id="step1-num">1</span>
+        <span class="step-title">API Key</span>
+      </div>
+      <div class="input-row">
+        <input type="password" id="apiKey" class="input" placeholder="Enter your StatusCake API Bearer token">
+        <button class="btn btn-ghost btn-small" id="toggleKey" onclick="toggleKeyVisibility()">SHOW</button>
+      </div>
+      <button class="btn btn-blue" id="btnTestConn" onclick="generateTestScript()">Generate Connection Test Script</button>
+      <span style="font-size:11px;color:var(--text-ghost);margin-left:12px">Run this first to verify your key</span>
+    </div>
+
+    <!-- Step 2: Prepare Tests -->
+    <div class="step-card disabled" id="step2">
+      <div class="step-header">
+        <span class="step-number" id="step2-num">2</span>
+        <span class="step-title">Prepare Tests</span>
+        <span class="step-badge" id="step2-badge" style="display:none"></span>
+      </div>
+      <div class="flex-row" style="margin-bottom:12px">
+        <div class="toggle-group">
+          <button class="toggle-btn active" id="toggle-csv" onclick="setInputMode('csv')">CSV</button>
+          <button class="toggle-btn" id="toggle-json" onclick="setInputMode('json')">JSON</button>
+        </div>
+        <button class="btn btn-small outline ml-auto" onclick="loadSample()">Load Sample</button>
+      </div>
+      <textarea class="textarea" id="rawInput" placeholder="name,website_url,test_type,check_rate&#10;My Site,https://example.com,HTTP,300"></textarea>
+      <div class="fields-hint">
+        <span class="req">Required:</span> name, website_url, test_type, check_rate &nbsp;|&nbsp;
+        Optional: confirmation, contact_groups, tags, regions
+      </div>
+      <div id="parseErrors"></div>
+      <button class="btn btn-ghost" id="btnParse" onclick="parseInput()" disabled>Parse &amp; Validate</button>
+    </div>
+
+    <!-- Table preview -->
+    <div id="tablePreview"></div>
+
+    <!-- Step 3: Generate -->
+    <div class="step-card disabled" id="step3">
+      <div class="step-header">
+        <span class="step-number" id="step3-num">3</span>
+        <span class="step-title">Generate Bash Script</span>
+      </div>
+      <div class="flex-row">
+        <button class="btn btn-green" id="btnGenerate" onclick="generateBulkScript()">Generate Bulk Insert Script</button>
+        <div class="ml-auto flex-row" style="gap:8px">
+          <span class="delay-label">Delay between requests (ms)</span>
+          <input type="number" class="delay-input" id="delayMs" value="500" min="0">
+        </div>
+      </div>
+    </div>
+
+    <!-- Script output -->
+    <div id="scriptOutput"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="copied-toast" style="display:none">Copied to clipboard</div>
+
+  <script>
+    // ─── State ───
+    let state = {
+      apiKey: '',
+      inputMode: 'csv',
+      tests: [],
+      generatedScript: '',
+      scriptType: '',
+    };
+
+    const CHECK_RATES = [0, 30, 60, 300, 900, 1800, 3600];
+    const TEST_TYPES = ['HTTP', 'HEAD', 'TCP', 'DNS', 'SMTP', 'SSH', 'PING', 'PUSH'];
+
+    const SAMPLE_CSV = `name,website_url,test_type,check_rate
+Production Site,https://example.com,HTTP,300
+Staging API,https://staging-api.example.com,HTTP,60
+Mail Server,mail.example.com,SMTP,1800
+DNS Check,ns1.example.com,DNS,3600`;
+
+    const SAMPLE_JSON = `[
+  {
+    "name": "Production Site",
+    "website_url": "https://example.com",
+    "test_type": "HTTP",
+    "check_rate": 300
+  },
+  {
+    "name": "Staging API",
+    "website_url": "https://staging-api.example.com",
+    "test_type": "HTTP",
+    "check_rate": 60
+  }
+]`;
+
+    // ─── Helpers ───
+    function $(id) { return document.getElementById(id); }
+
+    function escapeShell(s) { return s.replace(/'/g, "'\\''"); }
+
+    function showToast(msg) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.style.display = 'block';
+      setTimeout(() => t.style.display = 'none', 2000);
+    }
+
+    function updateStepStates() {
+      const hasKey = $('apiKey').value.trim().length > 0;
+      const hasTests = state.tests.length > 0;
+
+      $('step1-num').className = hasKey ? 'step-number active' : 'step-number';
+      $('step2').className = hasKey ? 'step-card' : 'step-card disabled';
+      $('step2-num').className = hasTests ? 'step-number active' : 'step-number';
+      $('step3').className = hasTests ? 'step-card' : 'step-card disabled';
+      $('step3-num').className = state.scriptType === 'bulk' ? 'step-number active' : 'step-number';
+      $('btnParse').disabled = !$('rawInput').value.trim();
+
+      if (hasTests) {
+        $('step2-badge').style.display = '';
+        $('step2-badge').textContent = `✓ ${state.tests.length} test${state.tests.length > 1 ? 's' : ''} validated`;
+      } else {
+        $('step2-badge').style.display = 'none';
+      }
+    }
+
+    // ─── Event Listeners ───
+    $('apiKey').addEventListener('input', function () {
+      state.generatedScript = '';
+      state.scriptType = '';
+      $('scriptOutput').innerHTML = '';
+      updateStepStates();
+    });
+
+    $('rawInput').addEventListener('input', function () {
+      state.tests = [];
+      state.generatedScript = '';
+      state.scriptType = '';
+      $('parseErrors').innerHTML = '';
+      $('tablePreview').innerHTML = '';
+      $('scriptOutput').innerHTML = '';
+      updateStepStates();
+    });
+
+    // ─── Toggle Key Visibility ───
+    function toggleKeyVisibility() {
+      const inp = $('apiKey');
+      const btn = $('toggleKey');
+      if (inp.type === 'password') {
+        inp.type = 'text'; btn.textContent = 'HIDE';
+      } else {
+        inp.type = 'password'; btn.textContent = 'SHOW';
+      }
+    }
+
+    // ─── Input Mode ───
+    function setInputMode(mode) {
+      state.inputMode = mode;
+      state.tests = [];
+      $('toggle-csv').className = mode === 'csv' ? 'toggle-btn active' : 'toggle-btn';
+      $('toggle-json').className = mode === 'json' ? 'toggle-btn active' : 'toggle-btn';
+      $('rawInput').placeholder = mode === 'csv'
+        ? 'name,website_url,test_type,check_rate\nMy Site,https://example.com,HTTP,300'
+        : '[{"name":"My Site","website_url":"https://example.com","test_type":"HTTP","check_rate":300}]';
+      $('parseErrors').innerHTML = '';
+      $('tablePreview').innerHTML = '';
+      $('scriptOutput').innerHTML = '';
+      updateStepStates();
+    }
+
+    function loadSample() {
+      $('rawInput').value = state.inputMode === 'csv' ? SAMPLE_CSV : SAMPLE_JSON;
+      state.tests = [];
+      $('parseErrors').innerHTML = '';
+      $('tablePreview').innerHTML = '';
+      $('scriptOutput').innerHTML = '';
+      updateStepStates();
+    }
+
+    // ─── CSV / JSON Parsing ───
+    function parseCSV(text) {
+      const lines = text.trim().split('\n').filter(l => l.trim());
+      if (lines.length < 2) return [];
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      return lines.slice(1).map(line => {
+        const vals = [];
+        let current = '', inQ = false;
+        for (const ch of line) {
+          if (ch === '"') { inQ = !inQ; continue; }
+          if (ch === ',' && !inQ) { vals.push(current.trim()); current = ''; continue; }
+          current += ch;
+        }
+        vals.push(current.trim());
+        const obj = {};
+        headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+        if (obj.check_rate) obj.check_rate = parseInt(obj.check_rate, 10);
+        return obj;
+      });
+    }
+
+    function parseJSON(text) {
+      const data = JSON.parse(text);
+      return Array.isArray(data) ? data : [data];
+    }
+
+    function validateTest(test, idx) {
+      const errs = [];
+      if (!test.name) errs.push(`Row ${idx+1}: "name" is required`);
+      if (!test.website_url) errs.push(`Row ${idx+1}: "website_url" is required`);
+      if (!test.test_type || !TEST_TYPES.includes(test.test_type.toUpperCase()))
+        errs.push(`Row ${idx+1}: "test_type" must be one of: ${TEST_TYPES.join(', ')}`);
+      if (test.check_rate !== undefined && !CHECK_RATES.includes(Number(test.check_rate)))
+        errs.push(`Row ${idx+1}: "check_rate" must be one of: ${CHECK_RATES.join(', ')}`);
+      return errs;
+    }
+
+    // ─── Parse ───
+    function parseInput() {
+      $('parseErrors').innerHTML = '';
+      $('tablePreview').innerHTML = '';
+      $('scriptOutput').innerHTML = '';
+      state.tests = [];
+      state.generatedScript = '';
+      state.scriptType = '';
+
+      try {
+        const raw = $('rawInput').value;
+        const parsed = state.inputMode === 'csv' ? parseCSV(raw) : parseJSON(raw);
+        if (!parsed.length) {
+          showErrors(['No tests found in input']); return;
+        }
+        const allErrs = parsed.flatMap((t, i) => validateTest(t, i));
+        if (allErrs.length) { showErrors(allErrs); updateStepStates(); return; }
+        state.tests = parsed.map(t => ({
+          ...t,
+          test_type: t.test_type.toUpperCase(),
+          check_rate: t.check_rate || 300
+        }));
+        renderTable();
+      } catch (e) {
+        showErrors([`Parse error: ${e.message}`]);
+      }
+      updateStepStates();
+    }
+
+    function showErrors(errs) {
+      $('parseErrors').innerHTML = `<div class="error-box">${errs.map(e => `<div>⚠ ${e}</div>`).join('')}</div>`;
+    }
+
+    function renderTable() {
+      const rows = state.tests.map((t, i) =>
+        `<div class="table-row" style="animation-delay:${i*30}ms">
+          <div class="col-idx">${i+1}</div>
+          <div class="col-name">${esc(t.name)}</div>
+          <div class="col-url">${esc(t.website_url)}</div>
+          <div class="col-meta">${t.test_type}</div>
+          <div class="col-meta">${t.check_rate}s</div>
+        </div>`
+      ).join('');
+
+      $('tablePreview').innerHTML = `
+        <div class="table-wrap">
+          <div class="table-head">
+            <div>#</div><div>Name</div><div>URL</div><div>Type</div><div>Rate</div>
+          </div>
+          <div class="table-body">${rows}</div>
+        </div>`;
+    }
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    // ─── Script Builders ───
+    function generateTestScript() {
+      const key = $('apiKey').value.trim();
+      if (!key) { showErrors(['API key is required']); return; }
+
+      state.scriptType = 'test';
+      state.generatedScript = buildTestOnlyScript(key);
+      renderScript();
+      updateStepStates();
+    }
+
+    function generateBulkScript() {
+      const key = $('apiKey').value.trim();
+      if (!key) { showErrors(['API key is required']); return; }
+      if (!state.tests.length) { showErrors(['Parse your tests first']); return; }
+
+      const delay = parseInt($('delayMs').value) || 500;
+      state.scriptType = 'bulk';
+      state.generatedScript = buildBulkScript(key, state.tests, delay);
+      renderScript();
+      updateStepStates();
+    }
+
+    function buildTestOnlyScript(apiKey) {
+      return `#!/bin/bash
+#
+# StatusCake API Connection Test
+# Generated: ${new Date().toISOString()}
+#
+
+API_KEY="${escapeShell(apiKey)}"
+BASE_URL="https://api.statuscake.com/v1"
+
+echo ""
+echo "━━━ Testing StatusCake API Connection ━━━"
+echo ""
+
+# Test 1: List uptime tests
+echo "→ GET /v1/uptime"
+RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -H "Authorization: Bearer \${API_KEY}" \\
+  "\${BASE_URL}/uptime")
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY=$(echo "$RESPONSE" | sed \\$d)
+
+if [ "$HTTP_CODE" -eq 200 ]; then
+  TEST_COUNT=$(echo "$BODY" | grep -o '"id"' | wc -l)
+  echo "  ✓ Auth OK — Existing uptime tests: ~\${TEST_COUNT}"
+else
+  echo "  ✗ Failed (HTTP \${HTTP_CODE})"
+  echo "  \${BODY}"
+  echo ""
+  echo "Check your key at: StatusCake → Account → API Keys"
+  exit 1
+fi
+
+# Test 2: Contact groups
+echo "→ GET /v1/contact-groups"
+CG=$(curl -s -H "Authorization: Bearer \${API_KEY}" "\${BASE_URL}/contact-groups")
+CG_COUNT=$(echo "$CG" | grep -o '"id"' | wc -l)
+echo "  ✓ Contact groups: ~\${CG_COUNT}"
+
+# Show group details
+echo "$CG" | grep -oP '"id":"\\K[^"]+|"name":"\\K[^"]+' | paste - - | while read id name; do
+  echo "    #\${id}  \${name}"
+done
+
+# Test 3: Monitoring locations
+echo "→ GET /v1/uptime-locations"
+LOC=$(curl -s -H "Authorization: Bearer \${API_KEY}" "\${BASE_URL}/uptime-locations")
+LOC_COUNT=$(echo "$LOC" | grep -o '"region_code"' | wc -l)
+echo "  ✓ Monitoring regions: ~\${LOC_COUNT}"
+
+echo ""
+echo "━━━ All checks passed — API key is valid ━━━"
+echo ""`;
+    }
+
+    function buildBulkScript(apiKey, tests, delayMs) {
+      const delay = (delayMs / 1000).toFixed(1);
+      let s = `#!/bin/bash
+#
+# StatusCake Bulk Uptime Test Insert
+# Generated: ${new Date().toISOString()}
+# Tests to create: ${tests.length}
+#
+
+API_KEY="${escapeShell(apiKey)}"
+BASE_URL="https://api.statuscake.com/v1"
+DELAY=${delay}
+SUCCESS=0
+FAILED=0
+
+# ─── Step 1: Test API Connection ───────────────────────
+echo ""
+echo "━━━ StatusCake API Connection Test ━━━"
+echo ""
+
+CONN_RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -H "Authorization: Bearer \${API_KEY}" \\
+  "\${BASE_URL}/uptime")
+
+CONN_HTTP_CODE=$(echo "$CONN_RESPONSE" | tail -1)
+CONN_BODY=$(echo "$CONN_RESPONSE" | sed \\$d)
+
+if [ "$CONN_HTTP_CODE" -eq 200 ]; then
+  TEST_COUNT=$(echo "$CONN_BODY" | grep -o '"id"' | wc -l)
+  echo "✓ Connected successfully"
+  echo "  Existing tests: ~\${TEST_COUNT}"
+
+  CG_RESPONSE=$(curl -s \\
+    -H "Authorization: Bearer \${API_KEY}" \\
+    "\${BASE_URL}/contact-groups")
+  CG_COUNT=$(echo "$CG_RESPONSE" | grep -o '"id"' | wc -l)
+  echo "  Contact groups: ~\${CG_COUNT}"
+
+  LOC_RESPONSE=$(curl -s \\
+    -H "Authorization: Bearer \${API_KEY}" \\
+    "\${BASE_URL}/uptime-locations")
+  LOC_COUNT=$(echo "$LOC_RESPONSE" | grep -o '"region_code"' | wc -l)
+  echo "  Monitoring regions: ~\${LOC_COUNT}"
+  echo ""
+else
+  echo "✗ Connection failed (HTTP \${CONN_HTTP_CODE})"
+  echo "  Response: \${CONN_BODY}"
+  echo ""
+  echo "Check your API key at: StatusCake → Account → API Keys"
+  exit 1
+fi
+
+echo "━━━ Ready to insert ${tests.length} uptime test(s) ━━━"
+echo ""
+read -p "Continue? (y/N) " CONFIRM
+if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+  echo "Aborted."
+  exit 0
+fi
+echo ""
+
+# ─── Step 2: Insert Uptime Tests ───────────────────────
+`;
+
+      tests.forEach((t, i) => {
+        const params = [];
+        params.push(`-d 'name=${escapeShell(t.name)}'`);
+        params.push(`-d 'test_type=${escapeShell(t.test_type)}'`);
+        params.push(`-d 'website_url=${escapeShell(t.website_url)}'`);
+        params.push(`-d 'check_rate=${t.check_rate}'`);
+        if (t.confirmation) params.push(`-d 'confirmation=${t.confirmation}'`);
+        if (t.contact_groups) {
+          const groups = Array.isArray(t.contact_groups) ? t.contact_groups : [t.contact_groups];
+          groups.forEach(g => params.push(`-d 'contact_groups[]=${g}'`));
+        }
+        if (t.tags) {
+          const tags = Array.isArray(t.tags) ? t.tags : [t.tags];
+          tags.forEach(tag => params.push(`-d 'tags[]=${escapeShell(String(tag))}'`));
+        }
+        if (t.regions) {
+          const regions = Array.isArray(t.regions) ? t.regions : [t.regions];
+          regions.forEach(r => params.push(`-d 'regions[]=${escapeShell(String(r))}'`));
+        }
+
+        s += `# --- Test ${i+1}/${tests.length}: ${t.name} ---
+echo "[${i+1}/${tests.length}] Creating: ${escapeShell(t.name)}"
+RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -X POST \\
+  -H "Authorization: Bearer \${API_KEY}" \\
+${params.map(p => '  ' + p + ' \\').join('\n')}
+  "\${BASE_URL}/uptime")
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY=$(echo "$RESPONSE" | sed \\$d)
+
+if [ "$HTTP_CODE" -eq 201 ] || [ "$HTTP_CODE" -eq 200 ]; then
+  NEW_ID=$(echo "$BODY" | grep -o '"new_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+  echo "  ✓ Created (ID: \${NEW_ID:-OK})"
+  SUCCESS=$((SUCCESS + 1))
+else
+  echo "  ✗ Failed (HTTP \${HTTP_CODE}): \${BODY}"
+  FAILED=$((FAILED + 1))
+fi
+`;
+        if (i < tests.length - 1) {
+          s += `\nsleep \${DELAY}\n`;
+        }
+        s += '\n';
+      });
+
+      s += `# ─── Summary ──────────────────────────────────────────
+echo ""
+echo "━━━ Complete ━━━"
+echo "  ✓ Success: \${SUCCESS}"
+echo "  ✗ Failed:  \${FAILED}"
+echo "  Total:    ${tests.length}"
+echo ""
+`;
+      return s;
+    }
+
+    // ─── Render Script Output ───
+    function renderScript() {
+      const filename = state.scriptType === 'test'
+        ? 'statuscake-test-connection.sh'
+        : 'statuscake-bulk-insert.sh';
+      const icon = state.scriptType === 'test' ? '🔌' : '📦';
+      const label = state.scriptType === 'test'
+        ? 'Connection Test Script'
+        : `Bulk Insert Script (${state.tests.length} tests)`;
+
+      $('scriptOutput').innerHTML = `
+        <div class="script-output">
+          <div class="script-header">
+            <span class="script-title">${icon} ${label}</span>
+            <div class="script-actions">
+              <button class="btn btn-ghost btn-small" onclick="copyScript()">📋 Copy</button>
+              <button class="btn btn-blue btn-small" onclick="downloadScript()">⬇ Download .sh</button>
+            </div>
+          </div>
+          <div class="script-frame">
+            <div class="script-tab">
+              <span>${filename}</span>
+              <span class="lang">bash</span>
+            </div>
+            <pre>${esc(state.generatedScript)}</pre>
+          </div>
+          <div class="how-to-run">
+            <div class="title">How to run:</div>
+            <div class="cmds">
+              <code>chmod +x ${filename}</code><br>
+              <code>./${filename}</code>
+            </div>
+          </div>
+        </div>`;
+
+      setTimeout(() => {
+        $('scriptOutput').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+
+    function copyScript() {
+      navigator.clipboard.writeText(state.generatedScript)
+        .then(() => showToast('Copied to clipboard'))
+        .catch(() => {
+          // Fallback
+          const ta = document.createElement('textarea');
+          ta.value = state.generatedScript;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          showToast('Copied to clipboard');
+        });
+    }
+
+    function downloadScript() {
+      const filename = state.scriptType === 'test'
+        ? 'statuscake-test-connection.sh'
+        : 'statuscake-bulk-insert.sh';
+      const blob = new Blob([state.generatedScript], { type: 'text/x-shellscript' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Init
+    updateStepStates();
+  </script>
+</body>
+</html>
