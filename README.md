@@ -6,7 +6,7 @@ Generates executable **bash scripts** with `curl` commands — no server require
 
 ## 🚀 Live Demo
 
-**[Open the tool →](https://YOUR_USERNAME.github.io/statuscake-bulk-uptime/)**
+**[Open the tool →](https://sagestoneinc.github.io/statuscake-bulk-uptime/)**
 
 ## How It Works
 
