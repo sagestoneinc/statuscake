@@ -56,6 +56,48 @@ Mail Server,mail.example.com,SMTP,1800
 | `tags` | | Array of tags |
 | `regions` | | Array of monitoring regions |
 
+## Run via GitHub Actions
+
+You can run connection tests and bulk inserts directly from GitHub — no local setup required.
+
+### Setup
+
+1. Go to **Settings → Secrets and variables → Actions**
+2. Add a repository secret named `STATUSCAKE_API_KEY` with your StatusCake API Bearer token
+
+### Usage
+
+1. Go to **Actions → StatusCake Bulk Uptime Insert**
+2. Click **Run workflow**
+3. Choose a mode:
+   - **test** — Verify your API key and list existing tests, contact groups, and regions
+   - **bulk** — Parse test data and create uptime tests via the API
+4. For bulk mode, provide your test data (CSV or JSON) in the **test_data** input
+
+#### Example — connection test
+
+> **mode:** `test`
+
+#### Example — bulk insert (CSV)
+
+> **mode:** `bulk`
+> **input_format:** `csv`
+> **test_data:**
+> ```
+> name,website_url,test_type,check_rate
+> Production Site,https://example.com,HTTP,300
+> Staging API,https://staging-api.example.com,HTTP,60
+> ```
+
+#### Example — bulk insert (JSON)
+
+> **mode:** `bulk`
+> **input_format:** `json`
+> **test_data:**
+> ```json
+> [{"name":"Production Site","website_url":"https://example.com","test_type":"HTTP","check_rate":300}]
+> ```
+
 ## Deploy to GitHub Pages
 
 1. Fork or clone this repo
