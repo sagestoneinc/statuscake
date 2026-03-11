@@ -86,15 +86,39 @@ jobs:
 
           # Test 2: Contact groups
           echo "→ GET /v1/contact-groups"
-          CG=$(curl -s -H "Authorization: Bearer ${API_KEY}" "${BASE_URL}/contact-groups")
-          CG_COUNT=$(echo "$CG" | grep -o '"id"' | wc -l)
-          echo "  ✓ Contact groups: ~${CG_COUNT}"
+          CG_RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${API_KEY}" \
+            "${BASE_URL}/contact-groups")
+
+          CG_HTTP_CODE=$(echo "$CG_RESPONSE" | tail -1)
+          CG_BODY=$(echo "$CG_RESPONSE" | sed '$d')
+
+          if [ "$CG_HTTP_CODE" -eq 200 ]; then
+            CG_COUNT=$(echo "$CG_BODY" | grep -o '"id"' | wc -l)
+            echo "  ✓ Contact groups: ~${CG_COUNT}"
+          else
+            echo "  ✗ Failed (HTTP ${CG_HTTP_CODE}) for /v1/contact-groups"
+            echo "  ${CG_BODY}"
+            exit 1
+          fi
 
           # Test 3: Monitoring locations
           echo "→ GET /v1/uptime-locations"
-          LOC=$(curl -s -H "Authorization: Bearer ${API_KEY}" "${BASE_URL}/uptime-locations")
-          LOC_COUNT=$(echo "$LOC" | grep -o '"region_code"' | wc -l)
-          echo "  ✓ Monitoring regions: ~${LOC_COUNT}"
+          LOC_RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${API_KEY}" \
+            "${BASE_URL}/uptime-locations")
+
+          LOC_HTTP_CODE=$(echo "$LOC_RESPONSE" | tail -1)
+          LOC_BODY=$(echo "$LOC_RESPONSE" | sed '$d')
+
+          if [ "$LOC_HTTP_CODE" -eq 200 ]; then
+            LOC_COUNT=$(echo "$LOC_BODY" | grep -o '"region_code"' | wc -l)
+            echo "  ✓ Monitoring regions: ~${LOC_COUNT}"
+          else
+            echo "  ✗ Failed (HTTP ${LOC_HTTP_CODE}) for /v1/uptime-locations"
+            echo "  ${LOC_BODY}"
+            exit 1
+          fi
 
           echo ""
           echo "━━━ All checks passed — API key is valid ━━━"
@@ -121,7 +145,8 @@ jobs:
           VALID_CHECK_RATES = {0, 30, 60, 300, 900, 1800, 3600}
 
           input_format = os.environ["INPUT_FORMAT"]
-          raw = os.environ["TEST_DATA"]
+          with open("/tmp/test_data.txt") as f:
+              raw = f.read()
 
           tests = []
           errors = []
@@ -133,8 +158,14 @@ jobs:
                       test = {}
                       for key, value in row.items():
                           test[key.strip().lower()] = value.strip() if value else ""
-                      if "check_rate" in test and test["check_rate"]:
-                          test["check_rate"] = int(test["check_rate"])
+                      if "check_rate" in test:
+                          if test["check_rate"] == "":
+                              del test["check_rate"]
+                          else:
+                              try:
+                                  test["check_rate"] = int(test["check_rate"])
+                              except ValueError:
+                                  errors.append(f"Row {i+1}: 'check_rate' must be an integer, got '{test['check_rate']}'")
                       tests.append(test)
               else:
                   data = json.loads(raw)
@@ -156,8 +187,15 @@ jobs:
               if tt not in VALID_TEST_TYPES:
                   errors.append(f"Row {i+1}: 'test_type' must be one of: {', '.join(sorted(VALID_TEST_TYPES))}")
               cr = t.get("check_rate")
-              if cr is not None and int(cr) not in VALID_CHECK_RATES:
-                  errors.append(f"Row {i+1}: 'check_rate' must be one of: {', '.join(str(x) for x in sorted(VALID_CHECK_RATES))}")
+              if cr is not None:
+                  if isinstance(cr, str) and cr.strip() == "":
+                      pass  # treat empty string as missing
+                  else:
+                      try:
+                          if int(cr) not in VALID_CHECK_RATES:
+                              errors.append(f"Row {i+1}: 'check_rate' must be one of: {', '.join(str(x) for x in sorted(VALID_CHECK_RATES))}")
+                      except (ValueError, TypeError):
+                          errors.append(f"Row {i+1}: 'check_rate' must be an integer, got '{cr}'")
 
           if errors:
               for err in errors:
@@ -167,11 +205,19 @@ jobs:
           # Normalize and write JSON for the next step
           normalized = []
           for t in tests:
+              cr = t.get("check_rate")
+              if cr is None or (isinstance(cr, str) and cr.strip() == ""):
+                  check_rate = 300
+              else:
+                  try:
+                      check_rate = int(cr)
+                  except (ValueError, TypeError):
+                      check_rate = 300
               entry = {
                   "name": t["name"],
                   "website_url": t["website_url"],
                   "test_type": str(t.get("test_type", "")).upper(),
-                  "check_rate": int(t.get("check_rate", 300)),
+                  "check_rate": check_rate,
               }
               for field in ("confirmation", "contact_groups", "tags", "regions"):
                   if t.get(field):
@@ -190,7 +236,7 @@ jobs:
         if: inputs.mode == 'bulk'
         env:
           API_KEY: ${{ secrets.STATUSCAKE_API_KEY }}
-          DELAY_MS: ${{ inputs.delay_ms || 500 }}
+          DELAY_MS: ${{ inputs.delay_ms }}
         run: |
           python3 <<'PYEOF'
           import json, subprocess, os, time, sys, re
