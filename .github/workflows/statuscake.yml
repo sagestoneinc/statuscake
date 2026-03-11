@@ -1,0 +1,270 @@
+name: StatusCake Bulk Uptime Insert
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Operation mode"
+        required: true
+        type: choice
+        options:
+          - test
+          - bulk
+        default: test
+      input_format:
+        description: "Input format (only used in bulk mode)"
+        required: false
+        type: choice
+        options:
+          - csv
+          - json
+        default: csv
+      test_data:
+        description: "Test data — CSV or JSON (only used in bulk mode)"
+        required: false
+        type: string
+      delay_ms:
+        description: "Delay between API requests in milliseconds (only used in bulk mode)"
+        required: false
+        type: number
+        default: 500
+
+env:
+  BASE_URL: https://api.statuscake.com/v1
+
+permissions: {}
+
+jobs:
+  run:
+    name: ${{ inputs.mode == 'test' && 'Connection Test' || 'Bulk Insert' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        env:
+          SC_API_KEY: ${{ secrets.STATUSCAKE_API_KEY }}
+          MODE: ${{ inputs.mode }}
+          TEST_DATA: ${{ inputs.test_data }}
+        run: |
+          if [ -z "${SC_API_KEY}" ]; then
+            echo "::error::STATUSCAKE_API_KEY secret is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+          if [ "${MODE}" = "bulk" ] && [ -z "${TEST_DATA}" ]; then
+            echo "::error::test_data input is required for bulk mode."
+            exit 1
+          fi
+
+      - name: Test API connection
+        if: inputs.mode == 'test' || inputs.mode == 'bulk'
+        env:
+          API_KEY: ${{ secrets.STATUSCAKE_API_KEY }}
+        run: |
+          echo ""
+          echo "━━━ Testing StatusCake API Connection ━━━"
+          echo ""
+
+          # Test 1: List uptime tests
+          echo "→ GET /v1/uptime"
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${API_KEY}" \
+            "${BASE_URL}/uptime")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            TEST_COUNT=$(echo "$BODY" | grep -o '"id"' | wc -l)
+            echo "  ✓ Auth OK — Existing uptime tests: ~${TEST_COUNT}"
+          else
+            echo "  ✗ Failed (HTTP ${HTTP_CODE})"
+            echo "  ${BODY}"
+            echo ""
+            echo "Check your key at: StatusCake → Account → API Keys"
+            exit 1
+          fi
+
+          # Test 2: Contact groups
+          echo "→ GET /v1/contact-groups"
+          CG=$(curl -s -H "Authorization: Bearer ${API_KEY}" "${BASE_URL}/contact-groups")
+          CG_COUNT=$(echo "$CG" | grep -o '"id"' | wc -l)
+          echo "  ✓ Contact groups: ~${CG_COUNT}"
+
+          # Test 3: Monitoring locations
+          echo "→ GET /v1/uptime-locations"
+          LOC=$(curl -s -H "Authorization: Bearer ${API_KEY}" "${BASE_URL}/uptime-locations")
+          LOC_COUNT=$(echo "$LOC" | grep -o '"region_code"' | wc -l)
+          echo "  ✓ Monitoring regions: ~${LOC_COUNT}"
+
+          echo ""
+          echo "━━━ All checks passed — API key is valid ━━━"
+          echo ""
+
+      - name: Parse test data
+        if: inputs.mode == 'bulk'
+        env:
+          INPUT_FORMAT: ${{ inputs.input_format }}
+          TEST_DATA: ${{ inputs.test_data }}
+        run: |
+          echo "${TEST_DATA}" > /tmp/test_data.txt
+
+          # Parse and validate tests using a small inline script
+          python3 - <<'PYEOF'
+          import csv
+          import json
+          import os
+          import sys
+          import io
+
+          # Values from StatusCake v1 API: https://developers.statuscake.com/api/
+          VALID_TEST_TYPES = {"HTTP", "HEAD", "TCP", "DNS", "SMTP", "SSH", "PING", "PUSH"}
+          VALID_CHECK_RATES = {0, 30, 60, 300, 900, 1800, 3600}
+
+          input_format = os.environ["INPUT_FORMAT"]
+          raw = os.environ["TEST_DATA"]
+
+          tests = []
+          errors = []
+
+          try:
+              if input_format == "csv":
+                  reader = csv.DictReader(io.StringIO(raw))
+                  for i, row in enumerate(reader):
+                      test = {}
+                      for key, value in row.items():
+                          test[key.strip().lower()] = value.strip() if value else ""
+                      if "check_rate" in test and test["check_rate"]:
+                          test["check_rate"] = int(test["check_rate"])
+                      tests.append(test)
+              else:
+                  data = json.loads(raw)
+                  tests = data if isinstance(data, list) else [data]
+          except Exception as e:
+              print(f"::error::Parse error: {e}")
+              sys.exit(1)
+
+          if not tests:
+              print("::error::No tests found in input")
+              sys.exit(1)
+
+          for i, t in enumerate(tests):
+              if not t.get("name"):
+                  errors.append(f"Row {i+1}: 'name' is required")
+              if not t.get("website_url"):
+                  errors.append(f"Row {i+1}: 'website_url' is required")
+              tt = str(t.get("test_type", "")).upper()
+              if tt not in VALID_TEST_TYPES:
+                  errors.append(f"Row {i+1}: 'test_type' must be one of: {', '.join(sorted(VALID_TEST_TYPES))}")
+              cr = t.get("check_rate")
+              if cr is not None and int(cr) not in VALID_CHECK_RATES:
+                  errors.append(f"Row {i+1}: 'check_rate' must be one of: {', '.join(str(x) for x in sorted(VALID_CHECK_RATES))}")
+
+          if errors:
+              for err in errors:
+                  print(f"::error::{err}")
+              sys.exit(1)
+
+          # Normalize and write JSON for the next step
+          normalized = []
+          for t in tests:
+              entry = {
+                  "name": t["name"],
+                  "website_url": t["website_url"],
+                  "test_type": str(t.get("test_type", "")).upper(),
+                  "check_rate": int(t.get("check_rate", 300)),
+              }
+              for field in ("confirmation", "contact_groups", "tags", "regions"):
+                  if t.get(field):
+                      entry[field] = t[field]
+              normalized.append(entry)
+
+          with open("/tmp/tests.json", "w") as f:
+              json.dump(normalized, f)
+
+          print(f"✓ Parsed and validated {len(normalized)} test(s)")
+          for i, t in enumerate(normalized):
+              print(f"  [{i+1}] {t['name']} → {t['website_url']} ({t['test_type']}, {t['check_rate']}s)")
+          PYEOF
+
+      - name: Bulk insert uptime tests
+        if: inputs.mode == 'bulk'
+        env:
+          API_KEY: ${{ secrets.STATUSCAKE_API_KEY }}
+          DELAY_MS: ${{ inputs.delay_ms || 500 }}
+        run: |
+          python3 <<'PYEOF'
+          import json, subprocess, os, time, sys, re
+
+          tests = json.load(open("/tmp/tests.json"))
+          api_key = os.environ["API_KEY"]
+          base_url = os.environ["BASE_URL"]
+          delay = int(os.environ.get("DELAY_MS", "500")) / 1000.0
+
+          success = 0
+          failed = 0
+
+          print()
+          print(f"━━━ Inserting {len(tests)} uptime test(s) ━━━")
+          print()
+
+          for i, t in enumerate(tests):
+              print(f"[{i+1}/{len(tests)}] Creating: {t['name']}")
+
+              data = [
+                  "-d", f"name={t['name']}",
+                  "-d", f"test_type={t['test_type']}",
+                  "-d", f"website_url={t['website_url']}",
+                  "-d", f"check_rate={t['check_rate']}",
+              ]
+
+              if t.get("confirmation"):
+                  data += ["-d", f"confirmation={t['confirmation']}"]
+
+              if t.get("contact_groups"):
+                  groups = t["contact_groups"] if isinstance(t["contact_groups"], list) else [t["contact_groups"]]
+                  for g in groups:
+                      data += ["-d", f"contact_groups[]={g}"]
+
+              if t.get("tags"):
+                  tags = t["tags"] if isinstance(t["tags"], list) else [t["tags"]]
+                  for tag in tags:
+                      data += ["-d", f"tags[]={tag}"]
+
+              if t.get("regions"):
+                  regions = t["regions"] if isinstance(t["regions"], list) else [t["regions"]]
+                  for r in regions:
+                      data += ["-d", f"regions[]={r}"]
+
+              cmd = [
+                  "curl", "-s", "-w", r"\n%{http_code}",
+                  "-X", "POST",
+                  "-H", f"Authorization: Bearer {api_key}",
+              ] + data + [f"{base_url}/uptime"]
+
+              result = subprocess.run(cmd, capture_output=True, text=True)
+              lines = result.stdout.strip().split("\n")
+              http_code = lines[-1] if lines else "0"
+              body = "\n".join(lines[:-1])
+
+              if http_code in ("200", "201"):
+                  match = re.search(r'"new_id"\s*:\s*"?(\w+)"?', body)
+                  new_id = match.group(1) if match else "OK"
+                  print(f"  ✓ Created (ID: {new_id})")
+                  success += 1
+              else:
+                  print(f"  ✗ Failed (HTTP {http_code}): {body}")
+                  failed += 1
+
+              if i < len(tests) - 1:
+                  time.sleep(delay)
+
+          print()
+          print("━━━ Complete ━━━")
+          print(f"  ✓ Success: {success}")
+          print(f"  ✗ Failed:  {failed}")
+          print(f"  Total:    {len(tests)}")
+          print()
+
+          if failed > 0:
+              sys.exit(1)
+          PYEOF
